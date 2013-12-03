@@ -74,6 +74,7 @@ var Popen = require('child_process').exec,
 	});
 
 	function isServingFileserver(hostname) {
+		return null;
 		var re = new RegExp(hostname);
 		return fs.readFileSync(LOCAL_HQSERVER_INI_URL,{encoding:'utf8'}).match(re);
 	}
@@ -103,6 +104,7 @@ var Popen = require('child_process').exec,
 					fileOut.write(line+"\n");
 				}
 			});
+			console.log("Restarting hqserverd: " + fileserver.hostname + " @ " + fileserver.mount);
 			Popen("sudo /opt/hqueue/scripts/hqserverd restart 2>&1", function(err, stdout, stderr) {
 				if (stdout.match(/Starting/)) {
 					serversBase.child(machine.hostname.replace(/\./g,"-")).set({
