@@ -112,11 +112,10 @@ var Popen = require('child_process').exec,
 					fileOut.write(line+"\n");
 				}
 			});
-			fileOut.close();
 			log("Restarting hqserverd: " + machine.hostname + " @ " + fileserver.mount);
 			Popen("sudo /opt/hqueue/scripts/hqserverd restart", function(err, stdout, stderr) {
 				setTimeout(function() {
-					request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
+					request("http://localhost:80", function(error, response, body) {
 						if (!error && response.statusCode==200) {
 							log("OK: hqserverd restarted. Serving " + fileserver.mount + " @ " + fileserver.hostname);
 							serversBase.child(machine.instance_id).set({
