@@ -5,6 +5,7 @@ var Popen = require('child_process').exec,
 	Q =	require("q"),
 	Firebase = require("firebase"),
 	request	= require("request"),
+	moment = require("moment"),
 	amazon = {
 		instance_id: "http://169.254.169.254/latest/meta-data/instance-id",
 		public_ip: "http://169.254.169.254/latest/meta-data/public-ipv4",
@@ -41,21 +42,21 @@ var Popen = require('child_process').exec,
 		results.forEach(function(o) {
 			machine[o.key] = o.val;
 		});
-		console.log(machine);
 		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
+		log("OK: Hqueueserver is up. Establishing base @ " + baseUrl);
 		base = new Firebase(baseUrl);
 		serversBase = base.child("servers");
 		framestoresBase = base.child("framestores");
 		framestoresBase.on("value", function(s) {
 			var instances = s.val(),
 				fs_name;
-			console.log(instances);
 			if (instances!==null) {
+				log("Found NUMBER framestore instances".replace(/NUMBER/, Object.keys(instances).length));
 				for (var instanceId in instances) {
 					var instanceData = instances[instanceId];
 					if (instanceData.hasOwnProperty('hostname') &&
 						instanceData.hasOwnProperty('filesystems')) {
-						console.log(instanceData.filesystems);
+						log("Selecting framestore instance [INSTANCE] @ ".replace(/INSTANCE/, instanceId) + instanceData.hostname);
 						for (fs_name in instanceData.filesystems) {
 							var fs_details = instanceData.filesystems[fs_name];
 							if (fs_details.hasOwnProperty('status') &&
@@ -72,6 +73,12 @@ var Popen = require('child_process').exec,
 			}
 		});
 	});
+
+	var logOut = fs.createWriteStream("/tmp/hqueue-node.log","w");
+	function log(str) {
+		var msg = "[" + machine.instance_id + "] [" + moment().format('MMMM Do YYYY, h:mm:ss a') + "] " + str;
+		logOut.write(msg+"\n");
+	}
 
 	function isServingFileserver(hostname) {
 		return null;
@@ -92,6 +99,7 @@ var Popen = require('child_process').exec,
 		defaults["hqserver.sharedNetwork.host"] = fileserver.hostname;
 		defaults["hqserver.sharedNetwork.path.linux"] = fileserver.mount;
 		defaults["hqserver.sharedNetwork.mount.linux"] = fileserver.mount;
+		log("Updating settings file with FOLDER @ ".replace(/FOLDER/, fileserver.mount) + fileserver.hostname);
 		var fileOut = fs.createWriteStream(LOCAL_HQSERVER_INI_URL, "w");
 		request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
 			body.split("\n").forEach(function(line) {
@@ -104,15 +112,23 @@ var Popen = require('child_process').exec,
 					fileOut.write(line+"\n");
 				}
 			});
-			console.log("Restarting hqserverd: " + fileserver.hostname + " @ " + fileserver.mount);
+			fileOut.close();
+			log("Restarting hqserverd: " + machine.hostname + " @ " + fileserver.mount);
 			Popen("sudo /opt/hqueue/scripts/hqserverd restart 2>&1", function(err, stdout, stderr) {
-				if (stdout.match(/Starting/)) {
-					serversBase.child(machine.hostname.replace(/\./g,"-")).set({
-						hostname: machine.hostname,
-						port: 80,
-						mount: fileserver.mount
+				setTimeout(function() {
+					request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
+						if (!error && response.statusCode==200) {
+							log("OK: hqserverd restarted. Serving " + fileserver.mount + " @ " + fileserver.hostname);
+							serversBase.child(machine.instance_id).set({
+								hostname: machine.hostname,
+								port: 80,
+								mount: fileserver.mount
+							});
+						} else {
+							log("ERROR: cannot reach hqserverd");
+						}
 					});
-				}
+				}, 30000);
 			});
 		});
 	}
