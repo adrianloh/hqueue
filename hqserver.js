@@ -25,7 +25,7 @@ var Popen = require('child_process').exec,
 	Q.all(Object.keys(amazon).map(function(key) {
 		var url = amazon[key],
 			req = Q.defer();
-		request(url, function (error, response, body) {
+		request({url:url, timeout: 2000}, function (error, response, body) {
 			var user_data = {}, b = (!error && response.statusCode==200) ? body : null;
 			if (key==='dynamic') b = JSON.parse(b);
 			if (key==='user_data') {
@@ -41,24 +41,32 @@ var Popen = require('child_process').exec,
 		results.forEach(function(o) {
 			machine[o.key] = o.val;
 		});
+		console.log(machine);
 		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
 		base = new Firebase(baseUrl);
 		serversBase = base.child("servers");
 		framestoresBase = base.child("framestores");
 		framestoresBase.on("value", function(s) {
-			var instanceData = s.val(), fs_name;
-			if (instanceData!==null &&
-				instanceData.hasOwnProperty('hostname') &&
-				instanceData.hasOwnProperty('filesystems')) {
-				for (fs_name in instanceData.filesystems) {
-					var fs_details = instanceData.filesystems[fs_name];
-					if (fs_details.hasOwnProperty('status') &&
-						fs_details.status==='online' &&
-						fs.existsSync(fs_details.mount) &&
-						isServingFileserver(instanceData.hostname)===null) {
-						fileserver.hostname = instanceData.hostname;
-						fileserver.mount = fs_details.mount;
-						restartServing(fileserver);
+			var instances = s.val(),
+				fs_name;
+			console.log(instances);
+			if (instances!==null) {
+				for (var instanceId in instances) {
+					var instanceData = instances[instanceId];
+					if (instanceData.hasOwnProperty('hostname') &&
+						instanceData.hasOwnProperty('filesystems')) {
+						console.log(instanceData.filesystems);
+						for (fs_name in instanceData.filesystems) {
+							var fs_details = instanceData.filesystems[fs_name];
+							if (fs_details.hasOwnProperty('status') &&
+								fs_details.status==='online' &&
+								fs.existsSync(fs_details.mount) &&
+								isServingFileserver(instanceData.hostname)===null) {
+								fileserver.hostname = instanceData.hostname;
+								fileserver.mount = fs_details.mount;
+								restartServing(fileserver);
+							}
+						}
 					}
 				}
 			}
