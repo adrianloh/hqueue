@@ -22,7 +22,7 @@ var child_process = require('child_process'),
 		mount: null
 	},
 	base, serversBase, framestoresBase,
-	logOut = fs.createWriteStream("/tmp/hqueue-node.log","w"),
+	logOut = fs.createWriteStream("/tmp/hqueue-server-node.log","w"),
 	DEFAULT_HQSERVER_INI_URL = "https://smack.s3-ap-southeast-1.amazonaws.com/hqserver.ini",
 	LOCAL_HQSERVER_INI_URL = "/opt/hqueue/hqserver.ini";
 
@@ -101,7 +101,7 @@ var child_process = require('child_process'),
 					if (fs_details.hasOwnProperty('status') &&
 						fs_details.status==='online' &&
 						fs.existsSync(fs_details.mount) &&
-						isServingFileserver(framestoreData.hostname)===null) {
+						fileserver.mount!==fs_details.mount) { // This is dodgy at best
 						fileserverData = {
 							hostname: framestoreData.hostname,
 							instance_id: framestoreInstanceId,
