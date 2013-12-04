@@ -47,7 +47,7 @@ var child_process = require('child_process'),
 		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
 		log("OK: Hqueueserver is up. Establishing base @ " + baseUrl);
 		base = new Firebase(baseUrl);
-		serversBase = base.child("servers");
+		serversBase = base.child("hqservers");
 		framestoresBase = base.child("framestores");
 
 		process.on("exit", function() {
