@@ -45,10 +45,10 @@ var child_process = require('child_process'),
 		results.forEach(function(o) {
 			machine[o.key] = o.val;
 		});
-		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
+//		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
 		log("OK: Hqueueclient is up. Establishing base @ " + baseUrl);
 		base = new Firebase(baseUrl);
-		serversBase = base.child("servers");
+		serversBase = base.child("hqservers");
 		serversBase.on("child_added", function(s) {
 			var hqserverData = s.val();
 			if (hqserverData!==null) {
