@@ -49,6 +49,11 @@ var child_process = require('child_process'),
 		base = new Firebase(baseUrl);
 		serversBase = base.child("servers");
 		framestoresBase = base.child("framestores");
+
+		process.on("exit", function() {
+			serversBase.child(machine.instance_id).remove();
+		});
+
 		framestoresBase.on("value", function(s) {
 			var instances = s.val();
 			// Remember, this is also null when the *entire* framestores ref gets removed
@@ -56,11 +61,13 @@ var child_process = require('child_process'),
 				processFramestore(instances);
 			}
 		});
+
 		framestoresBase.on("child_removed", function(s) {
 			if (s.name()===fileserver.instance_id) {
 				restartServing(); // We're not OK, serve localhost
 			}
 		});
+
 	});
 
 	function log(str) {
