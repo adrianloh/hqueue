@@ -114,9 +114,11 @@ var child_process = require('child_process'),
 		if (typeof(_fileserver)==='undefined') {
 			// If we're not passed _fileserver, it means the fileserver is down
 			// and we reset to point to ourselves
-			_fileserver.hostname = "localhost";
-			_fileserver.mount = "/mnt/hq";
-			_fileserver.instance_id = machine.instance_id;
+			_fileserver = {
+				hostname: "localhost",
+				mount: "/mnt/hq",
+				instance_id: machine.instance_id
+			};
 		}
 		defaults["hqserver.sharedNetwork.host"] = _fileserver.hostname;
 		defaults["hqserver.sharedNetwork.path.linux"] = _fileserver.mount;
