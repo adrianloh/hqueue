@@ -1,6 +1,7 @@
 #! /usr/bin/env node
+"use strict";
 
-var Popen = require('child_process').exec,
+var child_process = require('child_process'),
 	fs = require("fs"),
 	Q =	require("q"),
 	Firebase = require("firebase"),
@@ -20,6 +21,7 @@ var Popen = require('child_process').exec,
 		mount: null
 	},
 	base, serversBase, framestoresBase,
+	logOut = fs.createWriteStream("/tmp/hqueue-node.log","w"),
 	DEFAULT_HQSERVER_INI_URL = "https://smack.s3-ap-southeast-1.amazonaws.com/hqserver.ini",
 	LOCAL_HQSERVER_INI_URL = "/opt/hqueue/hqserver.ini";
 
@@ -27,8 +29,8 @@ var Popen = require('child_process').exec,
 		var url = amazon[key],
 			req = Q.defer();
 		request({url:url, timeout: 2000}, function (error, response, body) {
-			var user_data = {}, b = (!error && response.statusCode==200) ? body : null;
-			if (key==='dynamic') b = JSON.parse(b);
+			var user_data = {}, b = (!error && response.statusCode===200) ? body : null;
+			if (key==='dynamic') { b = JSON.parse(b); }
 			if (key==='user_data') {
 				if (b!==null) {
 					b.split("\n").map(function(s) { return s.split("="); }).forEach(function(a) { user_data[a[0]] = a[1]; });
@@ -48,35 +50,21 @@ var Popen = require('child_process').exec,
 		serversBase = base.child("servers");
 		framestoresBase = base.child("framestores");
 		framestoresBase.on("value", function(s) {
-			var instances = s.val(),
-				fs_name;
+			var instances = s.val();
+			// Remember, this is also null when the framestores ref gets removed
 			if (instances!==null) {
-				log("Found NUMBER framestore instances".replace(/NUMBER/, Object.keys(instances).length));
-				for (var instanceId in instances) {
-					var instanceData = instances[instanceId];
-					if (instanceData.hasOwnProperty('hostname') &&
-						instanceData.hasOwnProperty('filesystems')) {
-						log("Selecting framestore instance [INSTANCE] @ ".replace(/INSTANCE/, instanceId) + instanceData.hostname);
-						for (fs_name in instanceData.filesystems) {
-							var fs_details = instanceData.filesystems[fs_name];
-							if (fs_details.hasOwnProperty('status') &&
-								fs_details.status==='online' &&
-								fs.existsSync(fs_details.mount) &&
-								isServingFileserver(instanceData.hostname)===null) {
-								fileserver.hostname = instanceData.hostname;
-								fileserver.mount = fs_details.mount;
-								restartServing(fileserver);
-							}
-						}
-					}
-				}
+				processFramestore(instances);
+			}
+		});
+		framestoresBase.on("child_removed", function(s) {
+			if (s.name()===fileserver.instance_id) {
+				restartServing(); // We're not OK, serve localhost
 			}
 		});
 	});
 
-	var logOut = fs.createWriteStream("/tmp/hqueue-node.log","w");
 	function log(str) {
-		var msg = "[" + machine.instance_id + "] [" + moment().format('MMMM Do YYYY, h:mm:ss a') + "] " + str;
+		var msg = "[" + machine.instance_id + "] [" + moment().add("hours",8).format('LLL') + "] " + str;
 		logOut.write(msg+"\n");
 	}
 
@@ -86,7 +74,34 @@ var Popen = require('child_process').exec,
 		return fs.readFileSync(LOCAL_HQSERVER_INI_URL,{encoding:'utf8'}).match(re);
 	}
 
-	function restartServing(fileserver) {
+	function processFramestore(instances) {
+		var framestoresCount = Object.keys(instances).length,
+			fs_name, fs_details, fileserverData, framestoreData;
+		log("Found NUMBER framestore instance(s)".replace(/NUMBER/, framestoresCount.toString()));
+		for (var framestoreInstanceId in instances) {
+			framestoreData = instances[framestoreInstanceId];
+			if (framestoreData.hasOwnProperty('hostname') &&
+				framestoreData.hasOwnProperty('filesystems')) {
+				log("Selecting framestore instance [INSTANCE] @ ".replace(/INSTANCE/, framestoreInstanceId) + framestoreData.hostname);
+				for (fs_name in framestoreData.filesystems) {
+					fs_details = framestoreData.filesystems[fs_name];
+					if (fs_details.hasOwnProperty('status') &&
+						fs_details.status==='online' &&
+						fs.existsSync(fs_details.mount) &&
+						isServingFileserver(framestoreData.hostname)===null) {
+						fileserverData = {
+							hostname: framestoreData.hostname,
+							instance_id: framestoreInstanceId,
+							mount: fs_details.mount
+						};
+						restartServing(fileserverData);
+					}
+				}
+			}
+		}
+	}
+
+	function restartServing(_fileserver) {
 		var defaults = {
 			"hqserver.sharedNetwork.host": "localhost",
 			"hqserver.sharedNetwork.path.linux": "%(here)s/shared",
@@ -96,10 +111,17 @@ var Popen = require('child_process').exec,
 			"hqserver.sharedNetwork.mount.windows": "H:",
 			"hqserver.sharedNetwork.mount.macosx": "/Volumes/HQShared"
 		};
-		defaults["hqserver.sharedNetwork.host"] = fileserver.hostname;
-		defaults["hqserver.sharedNetwork.path.linux"] = fileserver.mount;
-		defaults["hqserver.sharedNetwork.mount.linux"] = fileserver.mount;
-		log("Updating settings file with FOLDER @ ".replace(/FOLDER/, fileserver.mount) + fileserver.hostname);
+		if (typeof(_fileserver)==='undefined') {
+			// If we're not passed _fileserver, it means the fileserver is down
+			// and we reset to point to ourselves
+			_fileserver.hostname = "localhost";
+			_fileserver.mount = "/mnt/hq";
+			_fileserver.instance_id = machine.instance_id;
+		}
+		defaults["hqserver.sharedNetwork.host"] = _fileserver.hostname;
+		defaults["hqserver.sharedNetwork.path.linux"] = _fileserver.mount;
+		defaults["hqserver.sharedNetwork.mount.linux"] = _fileserver.mount;
+		log("Updating settings file with FOLDER @ ".replace(/FOLDER/, _fileserver.mount) + _fileserver.hostname);
 		var fileOut = fs.createWriteStream(LOCAL_HQSERVER_INI_URL, "w");
 		request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
 			body.split("\n").forEach(function(line) {
@@ -112,18 +134,22 @@ var Popen = require('child_process').exec,
 					fileOut.write(line+"\n");
 				}
 			});
-			log("Restarting hqserverd: " + machine.hostname + " @ " + fileserver.mount);
-			Popen("sudo /opt/hqueue/scripts/hqserverd restart", function(err, stdout, stderr) {
+			log("Restarting hqserverd: " + machine.hostname);
+			child_process.execFile("/opt/hqueue/scripts/hqserverd", ["restart"], function(err, stdout, stderr) {
+				fileserver = _fileserver;
 				setTimeout(function() {
 					request("http://localhost:80", function(error, response, body) {
-						if (!error && response.statusCode==200) {
-							log("OK: hqserverd restarted. Serving " + fileserver.mount + " @ " + fileserver.hostname);
+						if (!error && response.statusCode===200) {
+							log("OK: hqserverd restarted. Serving " + _fileserver.mount + " @ " + _fileserver.hostname);
 							serversBase.child(machine.instance_id).set({
 								hostname: machine.hostname,
+								instance_id: machine.instance_id,
 								port: 80,
+								fileserver: fileserver.hostname,
 								mount: fileserver.mount
 							});
 						} else {
+							fileserver = {hostname: null, mount: null};
 							log("ERROR: cannot reach hqserverd");
 						}
 					});
