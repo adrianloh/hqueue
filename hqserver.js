@@ -7,6 +7,7 @@ var child_process = require('child_process'),
 	Firebase = require("firebase"),
 	request	= require("request"),
 	moment = require("moment"),
+	uuid = require('node-uuid'),
 	amazon = {
 		instance_id: "http://169.254.169.254/latest/meta-data/instance-id",
 		public_ip: "http://169.254.169.254/latest/meta-data/public-ipv4",
@@ -89,7 +90,7 @@ var child_process = require('child_process'),
 			since it can only serve from one fileserver, and that includes of course,
 			the filesystems object enclosed within each server as well. One possible "hack"
 			is to fire up multiple instances of HQueue (one for each framestore), each one pointing
-			to a different ini file, each one running on a different port for */
+			to a different ini file, each one running on a different port */
 		for (var framestoreInstanceId in instances) {
 			framestoreData = instances[framestoreInstanceId];
 			if (framestoreData.hasOwnProperty('hostname') &&

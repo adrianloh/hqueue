@@ -15,8 +15,15 @@ var child_process = require('child_process'),
 		user_data: "http://169.254.169.254/latest/user-data"
 	},
 	machine = {},
+	hqserver = {
+		hostname: null,
+		instance_id: null
+	},
 	baseUrl = "https://badaboom.firebaseio-demo.com",
-	base, serversBase, framestoresBase,
+	base, serversBase,
+	HQCLIENT_LOCATION = "/home/ec2-user/hqclient/",
+	HQCLIENT_EXECUTABLE = HQCLIENT_LOCATION + "hqclientd",
+	LOCAL_HQNODE_INI_URL = HQCLIENT_LOCATION + "hqnode.ini",
 	logOut = fs.createWriteStream("/tmp/hqueue-client-node.log","w");
 
 	Q.all(Object.keys(amazon).map(function(key) {
@@ -42,9 +49,60 @@ var child_process = require('child_process'),
 		log("OK: Hqueueclient is up. Establishing base @ " + baseUrl);
 		base = new Firebase(baseUrl);
 		serversBase = base.child("servers");
+		serversBase.on("child_added", function(s) {
+			var hqserverData = s.val();
+			if (hqserverData!==null) {
+				connectToServer(hqserverData);
+			}
+		});
+		serversBase.on("child_removed", function(s) {
+			var hqserverData = s.val();
+			if (hqserverData!==null) {
+				if (hqserverData.instance_id===hqserver.instance_id) {
+					log("WARNING: HQserver [" + hqserverData.instance_id + "] is down.");
+					hqserver.hostname = null;
+					hqserver.instance_id = null;
+				}
+			}
+		});
 	});
 
 	function log(str) {
 		var msg = "[" + machine.instance_id + "] [" + moment().add("hours",8).format('LLL') + "] " + str;
 		logOut.write(msg+"\n");
+	}
+
+	function connectToServer(_hqserver) {
+		var defaults = {
+			"server": "localhost",
+			"port": "80",
+			"sharedNetwork.mount" : "/mnt/hq"
+		};
+		if (typeof(_hqserver)!=='undefined') {
+			defaults.server = _hqserver.hostname;
+			defaults.port = _hqserver.port;
+			defaults["sharedNetwork.mount"] = _hqserver.mount;
+		}
+		log("Updating hqserver ==> " + _hqserver.hostname);
+		log("Using shared folder from " + _hqserver.fileserver + " mounted @ " + _hqserver.mount);
+		var fileOut = fs.createWriteStream(LOCAL_HQNODE_INI_URL, "w");
+
+		// Write the body of the .ini file
+		fileOut.write("[main]\n");
+		Object.keys(defaults).forEach(function(key) {
+			var line = key + " = " + defaults[key] + "\n";
+			fileOut.write(line);
+		});
+		fileOut.write("[job_environment]");
+
+		log("Restarting hqclientd: " + machine.hostname);
+		child_process.execFile(HQCLIENT_EXECUTABLE, ["restart"], function(err, stdout, stderr) {
+			if (stdout.match(/success/)) {
+				log("OK: Restarted hqclientd: " + machine.hostname);
+				hqserver.hostname = _hqserver.hostname;
+				hqserver.instance_id = _hqserver.instance_id;
+			} else {
+				log("ERROR: Did not acquire success from hqclientd restart");
+			}
+		});
 	}
