@@ -76,16 +76,10 @@ var child_process = require('child_process'),
 		logOut.write(msg+"\n");
 	}
 
-	function isServingFileserver(hostname) {
-		return null;
-		var re = new RegExp(hostname);
-		return fs.readFileSync(LOCAL_HQSERVER_INI_URL,{encoding:'utf8'}).match(re);
-	}
-
 	function processFramestore(instances) {
 		var framestoresCount = Object.keys(instances).length,
 			fs_name, fs_details, fileserverData, framestoreData;
-		log("Found NUMBER framestore instance(s)".replace(/NUMBER/, framestoresCount.toString()));
+		log("Received NUMBER framestore instance(s)".replace(/NUMBER/, framestoresCount.toString()));
 		/* Remember for Houdini's HQueue, we're expecting instances to only always be one
 			since it can only serve from one fileserver, and that includes of course,
 			the filesystems object enclosed within each server as well. One possible "hack"
@@ -95,19 +89,23 @@ var child_process = require('child_process'),
 			framestoreData = instances[framestoreInstanceId];
 			if (framestoreData.hasOwnProperty('hostname') &&
 				framestoreData.hasOwnProperty('filesystems')) {
-				log("Selecting framestore instance [INSTANCE] @ ".replace(/INSTANCE/, framestoreInstanceId) + framestoreData.hostname);
 				for (fs_name in framestoreData.filesystems) {
 					fs_details = framestoreData.filesystems[fs_name];
 					if (fs_details.hasOwnProperty('status') &&
 						fs_details.status==='online' &&
-						fs.existsSync(fs_details.mount) &&
-						fileserver.mount!==fs_details.mount) { // This is dodgy at best
+						fileserver.mount!==fs_details.mount) {
+						// This last check is dodgy at best. You only really want to restart
+						// the server when something "catastrophic" happens to the fileserver
 						fileserverData = {
 							hostname: framestoreData.hostname,
 							instance_id: framestoreInstanceId,
 							mount: fs_details.mount
 						};
+						// Be optimistic and lock this down early, so if another refresh comes, nothing will happen...
+						fileserver = fileserverData;
 						restartServing(fileserverData);
+					} else {
+						log("Data refreshed from framestore [INSTANCE] @ ".replace(/INSTANCE/, framestoreInstanceId) + framestoreData.hostname);
 					}
 				}
 			}
@@ -132,6 +130,8 @@ var child_process = require('child_process'),
 				mount: "/mnt/hq",
 				instance_id: machine.instance_id
 			};
+			// Reset this so if a new framestore emerges we are good to go
+			fileserver = _fileserver;
 		}
 		defaults["hqserver.sharedNetwork.host"] = _fileserver.hostname;
 		defaults["hqserver.sharedNetwork.path.linux"] = _fileserver.mount;
@@ -162,7 +162,6 @@ var child_process = require('child_process'),
 		}
 		function restart(cmd) {
 			child_process.execFile(cmd, ["restart"], function(err, stdout, stderr) {
-				fileserver = _fileserver;
 				setTimeout(function() {
 					request("http://localhost:80", function(error, response, body) {
 						if (!error && response.statusCode===200) {
@@ -176,10 +175,11 @@ var child_process = require('child_process'),
 							});
 						} else {
 							fileserver = {hostname: null, mount: null};
+							serversBase.child(machine.instance_id).remove();
 							log("ERROR: cannot reach hqserverd");
 						}
 					});
-				}, 30000);
+				}, 10000);
 			});
 		}
 	}
