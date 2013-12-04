@@ -51,7 +51,7 @@ var child_process = require('child_process'),
 		framestoresBase = base.child("framestores");
 		framestoresBase.on("value", function(s) {
 			var instances = s.val();
-			// Remember, this is also null when the framestores ref gets removed
+			// Remember, this is also null when the *entire* framestores ref gets removed
 			if (instances!==null) {
 				processFramestore(instances);
 			}
@@ -78,6 +78,11 @@ var child_process = require('child_process'),
 		var framestoresCount = Object.keys(instances).length,
 			fs_name, fs_details, fileserverData, framestoreData;
 		log("Found NUMBER framestore instance(s)".replace(/NUMBER/, framestoresCount.toString()));
+		/* Remember for Houdini's HQueue, we're expecting instances to only always be one
+			since it can only serve from one fileserver, and that includes of course,
+			the filesystems object enclosed within each server as well. One possible "hack"
+			is to fire up multiple instances of HQueue (one for each framestore), each one pointing
+			to a different ini file, each one running on a different port for */
 		for (var framestoreInstanceId in instances) {
 			framestoreData = instances[framestoreInstanceId];
 			if (framestoreData.hasOwnProperty('hostname') &&
@@ -123,21 +128,32 @@ var child_process = require('child_process'),
 		defaults["hqserver.sharedNetwork.host"] = _fileserver.hostname;
 		defaults["hqserver.sharedNetwork.path.linux"] = _fileserver.mount;
 		defaults["hqserver.sharedNetwork.mount.linux"] = _fileserver.mount;
-		log("Updating settings file with FOLDER @ ".replace(/FOLDER/, _fileserver.mount) + _fileserver.hostname);
-		var fileOut = fs.createWriteStream(LOCAL_HQSERVER_INI_URL, "w");
-		request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
-			body.split("\n").forEach(function(line) {
-				if (line.match(/FUCKMEDADDY/)) {
-					Object.keys(defaults).forEach(function(key){
-						var l = key + " = " + defaults[key];
-						fileOut.write(l+"\n");
-					});
-				} else {
-					fileOut.write(line+"\n");
-				}
+		if (_fileserver.hostname==="localhost") {
+			// The decision we're making here is, if the fileserver goes down, then
+			// simply publish the fact (so maybe the ui can update) but don't
+			// actually restart the server, that way jobs can still be submitted.
+			log("WARNING: Fileserver is down. Using localhost.");
+			restart("/bin/echo");
+		} else {
+			log("Updating settings file with FOLDER @ ".replace(/FOLDER/, _fileserver.mount) + _fileserver.hostname);
+			var fileOut = fs.createWriteStream(LOCAL_HQSERVER_INI_URL, "w");
+			request(DEFAULT_HQSERVER_INI_URL, function(error, response, body) {
+				body.split("\n").forEach(function(line) {
+					if (line.match(/FUCKMEDADDY/)) {
+						Object.keys(defaults).forEach(function(key){
+							var l = key + " = " + defaults[key];
+							fileOut.write(l+"\n");
+						});
+					} else {
+						fileOut.write(line+"\n");
+					}
+				});
+				log("Restarting hqserverd: " + machine.hostname);
+				restart("/opt/hqueue/scripts/hqserverd");
 			});
-			log("Restarting hqserverd: " + machine.hostname);
-			child_process.execFile("/opt/hqueue/scripts/hqserverd", ["restart"], function(err, stdout, stderr) {
+		}
+		function restart(cmd) {
+			child_process.execFile(cmd, ["restart"], function(err, stdout, stderr) {
 				fileserver = _fileserver;
 				setTimeout(function() {
 					request("http://localhost:80", function(error, response, body) {
@@ -157,5 +173,5 @@ var child_process = require('child_process'),
 					});
 				}, 30000);
 			});
-		});
+		}
 	}
