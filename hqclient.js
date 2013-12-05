@@ -20,7 +20,7 @@ var child_process = require('child_process'),
 		instance_id: null
 	},
 	baseUrl = "https://badaboom.firebaseio-demo.com",
-	base, serversBase,
+	base, serversBase, meBase, assetsBase,
 	HQCLIENT_LOCATION = "/home/ec2-user/hqclient/",
 	HQCLIENT_EXECUTABLE = HQCLIENT_LOCATION + "hqclientd",
 	LOCAL_HQNODE_INI_URL = HQCLIENT_LOCATION + "hqnode.ini",
@@ -46,15 +46,20 @@ var child_process = require('child_process'),
 			machine[o.key] = o.val;
 		});
 		baseUrl = machine.user_data.hasOwnProperty('base') ? baseUrl.replace(/badaboom/, machine.user_data.base) : baseUrl;
-		log("OK: Hqueueclient is up. Establishing base @ " + baseUrl);
 		base = new Firebase(baseUrl);
+		meBase = base.child("hqclients").child(machine.instance_id);
 		serversBase = base.child("hqservers");
+		assetsBase = base.child("assets");
+
+		log("OK: Hqueueclient is up. Establishing base @ " + baseUrl);
+
 		serversBase.on("child_added", function(s) {
 			var hqserverData = s.val();
 			if (hqserverData!==null) {
 				connectToServer(hqserverData);
 			}
 		});
+
 		serversBase.on("child_removed", function(s) {
 			var hqserverData = s.val();
 			if (hqserverData!==null) {
@@ -65,11 +70,56 @@ var child_process = require('child_process'),
 				}
 			}
 		});
+
+		assetsBase.on("child_added", function(s) {
+			var home = "/home/ec2-user/",
+				re_me = new RegExp(machine.instance_id),
+				downloadPkg = s.val(), cmd, basename;
+			if (downloadPkg!==null &&
+				(downloadPkg.siapa.match(/all/) || downloadPkg.siapa.match(re_me))) {
+
+				s.ref().child("workers").transaction(function(o) {
+					if (o===null) { o = {}; }
+					o[machine.instance_id] = "downloading";
+					return o;
+				});
+
+				log("Downloading " + downloadPkg.src);
+
+				if (downloadPkg.src.match(/tgz/) || downloadPkg.src.match(/tar.gz/)) {
+					cmd = 'curl -so - "SRC" | tar xvzf - '.replace(/SRC/, downloadPkg.src);
+					if (downloadPkg.hasOwnProperty('unzip_to')) {
+						cmd+= "-C " + downloadPkg.unzip_to;
+					}
+				} else {
+					basename = path.basename(downloadPkg.src);
+					cmd = 'wget "SRC" -O '.replace(/SRC/, downloadPkg.src);
+					if (downloadPkg.hasOwnProperty('unzip_to')) {
+						cmd+=downloadPkg.unzip_to;
+					} else {
+						cmd+=(home+basename);
+					}
+				}
+				child_process.exec(cmd, {cwd:home}, function(err, stdout, stderr) {
+					if (!err) {
+						s.ref().child("workers").transaction(function(o) {
+							if (o===null) { o = {}; }
+							o[machine.instance_id] = "done";
+							return o;
+						});
+						log("Done processing " + downloadPkg.src);
+					}
+				});
+			}
+		});
 	});
 
 	function log(str) {
 		var msg = "[" + machine.instance_id + "] [" + moment().add("hours",8).format('LLL') + "] " + str;
 		logOut.write(msg+"\n");
+		if (typeof(meBase)!=='undefined') {
+			meBase.child("log").set(msg);
+		}
 	}
 
 	function connectToServer(_hqserver) {

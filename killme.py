@@ -14,7 +14,7 @@ if userbase:
 
 @atexit.register
 def removeBase():
-	url = base + "/hqserver/" + instance_id + ".json"
+	url = base + "/hqservers/" + instance_id + ".json"
 	cmd = "curl -X DELETE " + url
 	os.popen(cmd).read()
 
