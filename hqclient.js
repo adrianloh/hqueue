@@ -72,41 +72,12 @@ var child_process = require('child_process'),
 			}
 		});
 
-		assetsBase.on("child_added", function(s) {
-			var home = "/home/ec2-user/",
-				re_me = new RegExp(machine.instance_id),
-				downloadPkg = s.val(), cmd, basename;
-			if (downloadPkg!==null &&
-				(downloadPkg.siapa.match(/all/) || downloadPkg.siapa.match(re_me))) {
-
-				s.ref().child("workers").transaction(function(o) {
-					if (o===null) { o = {}; }
-					o[machine.instance_id] = "downloading";
-					return o;
-				});
-
-				log("Downloading " + downloadPkg.src);
-
-				if (downloadPkg.src.match(/tgz/) || downloadPkg.src.match(/tar.gz/)) {
-					cmd = 'curl -so - "SRC" | tar xvzf - -C '.replace(/SRC/, downloadPkg.src);
-					cmd+= downloadPkg.unzip_to;
-				} else {
-					basename = path.basename(downloadPkg.src);
-					cmd = 'wget "SRC" -O '.replace(/SRC/, downloadPkg.src);
-					cmd+= (downloadPkg.unzip_to + "/" + basename);
-				}
-				child_process.exec(cmd, {cwd:home}, function(err, stdout, stderr) {
-					if (!err) {
-						s.ref().child("workers").transaction(function(o) {
-							if (o===null) { o = {}; }
-							o[machine.instance_id] = "done";
-							return o;
-						});
-						log("Done processing " + downloadPkg.src);
-					}
-				});
+		assetsBase.on("child_added", function(snap) {
+			if (snap.val()!==null) {
+				downloadFile(snap);
 			}
 		});
+
 	});
 
 	function log(str) {
@@ -150,4 +121,42 @@ var child_process = require('child_process'),
 				log("ERROR: Did not acquire success from hqclientd restart");
 			}
 		});
+	}
+
+	function downloadFile(snap) {
+		var home = "/home/ec2-user/",
+			re_me = new RegExp(machine.instance_id),
+			downloadPkg = snap.val(), cmd, basename;
+		if (downloadPkg.siapa.match(/all/) || downloadPkg.siapa.match(re_me)) {
+
+			cmd = "mkdir -p " + downloadPkg.unzip_to + ";";
+
+			snap.ref().child("workers").transaction(function(o) {
+				if (o===null) { o = {}; }
+				o[machine.instance_id] = "downloading";
+				return o;
+			});
+
+			log("Downloading " + downloadPkg.src);
+
+			if (downloadPkg.src.match(/tgz/) || downloadPkg.src.match(/tar.gz/)) {
+				cmd = 'curl -so - "SRC" | tar xvzf - -C '.replace(/SRC/, downloadPkg.src);
+				cmd+= downloadPkg.unzip_to;
+			} else {
+				basename = path.basename(downloadPkg.src);
+				cmd = 'wget "SRC" -O '.replace(/SRC/, downloadPkg.src);
+				cmd+= (downloadPkg.unzip_to + "/" + basename);
+			}
+
+			child_process.exec(cmd, {cwd:home}, function(err, stdout, stderr) {
+				if (!err) {
+					snap.ref().child("workers").transaction(function(o) {
+						if (o===null) { o = {}; }
+						o[machine.instance_id] = "done";
+						return o;
+					});
+					log("Done processing " + downloadPkg.src);
+				}
+			});
+		}
 	}
