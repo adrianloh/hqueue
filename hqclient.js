@@ -87,18 +87,12 @@ var child_process = require('child_process'),
 				log("Downloading " + downloadPkg.src);
 
 				if (downloadPkg.src.match(/tgz/) || downloadPkg.src.match(/tar.gz/)) {
-					cmd = 'curl -so - "SRC" | tar xvzf - '.replace(/SRC/, downloadPkg.src);
-					if (downloadPkg.hasOwnProperty('unzip_to')) {
-						cmd+= "-C " + downloadPkg.unzip_to;
-					}
+					cmd = 'curl -so - "SRC" | tar xvzf - -C '.replace(/SRC/, downloadPkg.src);
+					cmd+= downloadPkg.unzip_to;
 				} else {
 					basename = path.basename(downloadPkg.src);
 					cmd = 'wget "SRC" -O '.replace(/SRC/, downloadPkg.src);
-					if (downloadPkg.hasOwnProperty('unzip_to')) {
-						cmd+=downloadPkg.unzip_to;
-					} else {
-						cmd+=(home+basename);
-					}
+					cmd+= (downloadPkg.unzip_to + "/" + basename);
 				}
 				child_process.exec(cmd, {cwd:home}, function(err, stdout, stderr) {
 					if (!err) {
@@ -125,7 +119,7 @@ var child_process = require('child_process'),
 	function connectToServer(_hqserver) {
 		var defaults = {
 			"server": "localhost",
-			"port": "80",
+			"port": 80,
 			"sharedNetwork.mount" : "/mnt/hq"
 		};
 		if (typeof(_hqserver)!=='undefined') {
@@ -140,7 +134,7 @@ var child_process = require('child_process'),
 		// Write the body of the .ini file
 		fileOut.write("[main]\n");
 		Object.keys(defaults).forEach(function(key) {
-			var line = key + " = " + defaults[key] + "\n";
+			var line = key + " = " + defaults[key].toString() + "\n";
 			fileOut.write(line);
 		});
 		fileOut.write("[job_environment]");
