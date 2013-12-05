@@ -3,6 +3,7 @@
 
 var child_process = require('child_process'),
 	fs = require("fs"),
+	path = require('path'),
 	Q =	require("q"),
 	Firebase = require("firebase"),
 	request	= require("request"),
