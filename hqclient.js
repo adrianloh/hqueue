@@ -52,6 +52,7 @@ var child_process = require('child_process'),
 		serversBase = base.child("hqservers");
 		assetsBase = base.child("assets");
 
+		meBase.child("hostname").set(machine.hostname);
 		log("OK: Hqueueclient is up. Establishing base @ " + baseUrl);
 
 		serversBase.on("child_added", function(s) {
@@ -84,7 +85,8 @@ var child_process = require('child_process'),
 		var msg = "[" + machine.instance_id + "] [" + moment().add("hours",8).format('LLL') + "] " + str;
 		logOut.write(msg+"\n");
 		if (typeof(meBase)!=='undefined') {
-			meBase.child("log").set(msg);
+			var fireMsg = "[" + moment().add("hours",8).format("MMMD@h:mma") + "] " + str;
+			meBase.child("log").set(fireMsg);
 		}
 	}
 
@@ -140,7 +142,7 @@ var child_process = require('child_process'),
 			log("Downloading " + downloadPkg.src);
 
 			if (downloadPkg.src.match(/tgz/) || downloadPkg.src.match(/tar.gz/)) {
-				cmd = 'curl -so - "SRC" | tar xvzf - -C '.replace(/SRC/, downloadPkg.src);
+				cmd = 'curl -Lso - "SRC" | tar xvzf - -C '.replace(/SRC/, downloadPkg.src);
 				cmd+= downloadPkg.unzip_to;
 			} else {
 				basename = path.basename(downloadPkg.src);
